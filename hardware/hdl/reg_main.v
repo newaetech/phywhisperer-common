@@ -31,8 +31,9 @@ module reg_main #(
    parameter pALL_TRIGGER_WIDTH_WIDTHS = 24*pNUM_TRIGGER_PULSES,
    parameter pCAPTURE_LEN_WIDTH = 24,
    parameter pQUICK_START_DEFAULT = 0, // set to 0 for PW-USB, 1 for PW-Trace
-   parameter pUSERIO_WIDTH = 8
-
+   parameter pUSERIO_WIDTH = 8,
+   parameter pSELECT = `MAIN_REG_SELECT,
+   parameter pREGISTERED_READ = 1
 )(
    input  wire         reset_pin,
    output wire         fpga_reset,
@@ -41,7 +42,7 @@ module reg_main #(
    input  wire         cwusb_clk,
    input  wire [7:0]   reg_address,  // Address of register
    input  wire [pBYTECNT_SIZE-1:0]  reg_bytecnt,  // Current byte count
-   output reg  [7:0]   read_data,    //
+   output wire [7:0]   read_data,    //
    input  wire [7:0]   write_data,   //
    input  wire         reg_read,     // Read flag. One clock cycle AFTER this flag is high
                                      // valid data must be present on the read_data bus
@@ -105,12 +106,12 @@ module reg_main #(
    input  wire         I_locked2,
 
 // Interface to top-level:
+   input  wire [31:0]  buildtime,
    output reg  [`FE_SELECT_WIDTH-1:0] fe_select,
    output wire selected
 
 );
 
-   wire [31:0] buildtime;
    reg  [7:0] reg_read_data;
    reg  empty_fifo_read;
    reg  fifo_empty_r;
@@ -128,6 +129,7 @@ module reg_main #(
    reg  reg_counter_quick_start;
    reg  [3:0] reg_board_rev;
    reg  [7:0] read_data_pre;
+   reg  [7:0] read_data_r;
    reg  reg_fast_fifo_rd_en;
    reg reg_timestamps_disable;
    reg reg_capture_while_trig;
@@ -163,7 +165,7 @@ module reg_main #(
 
    reg reg_reset = 1'b0;
 
-   assign selected = reg_addrvalid & reg_address[7:6] == `MAIN_REG_SELECT;
+   assign selected = reg_addrvalid & reg_address[7:6] == pSELECT;
    wire [5:0] address = reg_address[5:0];
 
    assign O_arm = reg_arm_r & ~I_flushing;
@@ -309,7 +311,9 @@ module reg_main #(
    // Register output read data to ease timing. If you need data one clock
    // cycle earlier, simply remove this stage.
    always @(posedge cwusb_clk)
-      read_data <= read_data_pre;
+      read_data_r <= read_data_pre;
+
+   assign read_data = pREGISTERED_READ? read_data_r : read_data_pre;
 
    // write logic (USB clock domain):
    always @(posedge cwusb_clk) begin
@@ -416,16 +420,6 @@ module reg_main #(
       .dst_pulse     (capture_enable_pulse)
    );
 
-
-   `ifndef __ICARUS__
-      USR_ACCESSE2 U_buildtime (
-         .CFGCLK(),
-         .DATA(buildtime),
-         .DATAVALID()
-      );
-   `else
-      assign buildtime = 0;
-   `endif
 
    `ifdef ILA_REG_MAIN
 
