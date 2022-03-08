@@ -47,6 +47,7 @@ module fe_capture_main #(
     input  wire I_arm,
     input  wire I_reg_arm, // TODO: yes this is confusing but there are two different arms..
                            // maybe there's a better way?
+    input  wire I_capture_off,
     input  wire [pCAPTURE_LEN_WIDTH-1:0] I_capture_len,
     input  wire I_count_writes,
     input  wire I_counter_quick_start,
@@ -137,7 +138,9 @@ module fe_capture_main #(
              // than we should. Could be fixed but it's not a problem since the FIFO gets flushed
              // upon re-arming. And the Xilinx FIFO is actually deeper than the requested 8192 anyway.
              // And we don't allow overflow writes anyway.
-             if (event_reg && short_timestamp && I_capture_enable && capture_allowed)
+             if (I_capture_off)
+                next_state = pS_IDLE;
+             else if (event_reg && short_timestamp && I_capture_enable && capture_allowed)
                 next_state = pS_DATA;
              else if (I_event && !short_timestamp_pre && I_capture_enable && capture_allowed)
                 // do FE_FIFO_CMD_TIME packet one cycle early so we don't get caught behind, 

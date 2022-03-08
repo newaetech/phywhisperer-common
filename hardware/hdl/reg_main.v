@@ -72,6 +72,8 @@ module reg_main #(
    output wire         O_arm,
    output wire         O_reg_arm,
    output wire         O_arm_pulse,
+   output wire         O_no_arm,
+   output wire         O_capture_off,
    input  wire         I_flushing,
    output wire [pCAPTURE_LEN_WIDTH-1:0] O_capture_len,
    output wire         O_count_writes,
@@ -120,6 +122,8 @@ module reg_main #(
    reg  [17:0] fifo_data_r;
    reg  reg_arm;
    reg  reg_arm_r;
+   reg  reg_no_arm;
+   reg  reg_capture_off;
    reg  capture_now;
    reg  capture_now_r;
    wire capture_enable_pulse;
@@ -171,6 +175,8 @@ module reg_main #(
    assign O_arm = reg_arm_r & ~I_flushing;
    assign O_arm_pulse = reg_arm & ~reg_arm_r;
    assign O_reg_arm = reg_arm;
+   assign O_no_arm = reg_no_arm;
+   assign O_capture_off = reg_capture_off;
    assign O_userio_pwdriven = reg_userio_pwdriven;
    assign O_userio_drive_data = reg_userio_drive_data;
    assign O_capture_now = capture_now & ~capture_now_r;
@@ -187,6 +193,8 @@ module reg_main #(
             `REG_SNIFF_FIFO_STAT: reg_read_data = {2'b00, I_fifo_status};
             `REG_FE_SELECT: reg_read_data = fe_select;
             `REG_ARM: reg_read_data = reg_arm;
+            `REG_NO_ARM: reg_read_data = reg_no_arm;
+            `REG_CAPTURE_OFF: reg_read_data = reg_capture_off;
             `REG_TRIGGER_ENABLE: reg_read_data = reg_trigger_enable;
             `REG_TRIGGER_DELAY: reg_read_data = reg_trigger_delay[reg_bytecnt*8 +: 8]; // warning: repeated access may not work as expected
             `REG_TRIGGER_WIDTH: reg_read_data = reg_trigger_width[reg_bytecnt*8 +: 8]; // warning: repeated access may not work as expected
@@ -320,6 +328,8 @@ module reg_main #(
       if (fpga_reset) begin
          fe_select <= `FE_USB;
          reg_arm <= 1'b0;
+         reg_no_arm <= 1'b0;
+         reg_capture_off <= 1'b0;
          reg_arm_r <= 1'b0;
          reg_trigger_enable <= 0;
          reg_trigger_delay <= 0;
@@ -369,6 +379,8 @@ module reg_main #(
                `REG_CAPTURE_WHILE_TRIG: reg_capture_while_trig <= write_data[0];
                `REG_MAX_TIMESTAMP: reg_max_timestamp[reg_bytecnt[0]*8 +: 8] <= write_data;
                `REG_LED_SELECT: reg_led_select <= write_data[0];
+               `REG_NO_ARM: reg_no_arm <= write_data[0];
+               `REG_CAPTURE_OFF: reg_capture_off <= write_data[0];
             endcase
          end
 
