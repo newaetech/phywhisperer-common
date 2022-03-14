@@ -25,6 +25,7 @@
 
 module reg_main #(
    parameter pBYTECNT_SIZE = 7,
+   parameter pBUFFER_SIZE = 64,
    parameter pNUM_TRIGGER_PULSES = 8,
    parameter pNUM_TRIGGER_WIDTH = 4,
    parameter pALL_TRIGGER_DELAY_WIDTHS = 24*pNUM_TRIGGER_PULSES,
@@ -183,6 +184,9 @@ module reg_main #(
 
    assign fpga_reset = reset_pin || reg_reset;
 
+   wire [9:0] buffer_size_bits = pBUFFER_SIZE;
+   wire [7:0] buffer_size_bytes = buffer_size_bits[9:2];
+
    // read logic:
    always @(*) begin
       if (selected && reg_read) begin
@@ -210,6 +214,7 @@ module reg_main #(
             `REG_CAPTURE_WHILE_TRIG: reg_read_data = reg_capture_while_trig;
             `REG_MAX_TIMESTAMP: reg_read_data = reg_max_timestamp[reg_bytecnt[0]*8 +: 8];
             `REG_LED_SELECT: reg_read_data = reg_led_select;
+            `REG_BUFFER_SIZE: reg_read_data = buffer_size_bytes;
             default: reg_read_data = 0;
          endcase
       end
