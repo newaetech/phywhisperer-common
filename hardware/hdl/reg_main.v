@@ -184,8 +184,8 @@ module reg_main #(
 
    assign fpga_reset = reset_pin || reg_reset;
 
-   wire [9:0] buffer_size_bits = pBUFFER_SIZE;
-   wire [7:0] buffer_size_bytes = buffer_size_bits[9:2];
+   wire [10:0] buffer_size_bits = pBUFFER_SIZE;
+   wire [7:0] buffer_size_bytes = buffer_size_bits[10:3];
 
    // read logic:
    always @(*) begin
