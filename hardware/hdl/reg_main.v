@@ -70,9 +70,9 @@ module reg_main #(
 
 // Interface to front-end capture:
    input  wire         fe_clk,
-   output wire         O_arm,
-   output wire         O_reg_arm,
-   output wire         O_arm_pulse,
+   input  wire         I_external_arm,
+   output wire         O_arm_usb,
+   output wire         O_arm_fe,
    output wire         O_capture_off,
    input  wire         I_flushing,
    output wire [pCAPTURE_LEN_WIDTH-1:0] O_capture_len,
@@ -122,7 +122,6 @@ module reg_main #(
    reg  [17:0] read_data_fifo;
    reg  [17:0] fifo_data_r;
    reg  reg_arm;
-   reg  reg_arm_r;
    reg  reg_capture_off;
    reg  capture_now;
    reg  capture_now_r;
@@ -139,6 +138,7 @@ module reg_main #(
    reg reg_capture_while_trig;
    reg [15:0] reg_max_timestamp;
    reg reg_led_select;
+   reg reg_external_arm;
 
    reg reg_trigger_enable;
    reg [pNUM_TRIGGER_WIDTH-1:0] reg_num_triggers;
@@ -172,9 +172,20 @@ module reg_main #(
    assign selected = reg_addrvalid & reg_address[7:6] == pSELECT;
    wire [5:0] address = reg_address[5:0];
 
-   assign O_arm = reg_arm_r & ~I_flushing;
-   assign O_arm_pulse = reg_arm & ~reg_arm_r;
-   assign O_reg_arm = reg_arm;
+   assign O_arm_usb = reg_external_arm? I_external_arm : reg_arm;
+   assign O_arm_fe = reg_arm_feclk;
+   (* ASYNC_REG = "TRUE" *) reg  [1:0] reg_arm_pipe;
+   reg reg_arm_feclk;
+   always @(posedge fe_clk) begin
+      if (fpga_reset) begin
+         reg_arm_feclk <= 0;
+         reg_arm_pipe <= 0;
+      end
+      else begin
+         {reg_arm_feclk, reg_arm_pipe} <= {reg_arm_pipe, O_arm_usb};
+      end
+   end
+
    assign O_capture_off = reg_capture_off;
    assign O_userio_pwdriven = reg_userio_pwdriven;
    assign O_userio_drive_data = reg_userio_drive_data;
@@ -215,6 +226,7 @@ module reg_main #(
             `REG_MAX_TIMESTAMP: reg_read_data = reg_max_timestamp[reg_bytecnt[0]*8 +: 8];
             `REG_LED_SELECT: reg_read_data = reg_led_select;
             `REG_BUFFER_SIZE: reg_read_data = buffer_size_bytes;
+            `REG_EXTERNAL_ARM: reg_read_data = reg_external_arm;
             default: reg_read_data = 0;
          endcase
       end
@@ -332,7 +344,6 @@ module reg_main #(
          fe_select <= `FE_USB;
          reg_arm <= 1'b0;
          reg_capture_off <= 1'b0;
-         reg_arm_r <= 1'b0;
          reg_trigger_enable <= 0;
          reg_trigger_delay <= 0;
          reg_trigger_width <= 0;
@@ -352,6 +363,7 @@ module reg_main #(
          reg_capture_while_trig <= 1'b0;
          reg_max_timestamp <= 16'hFFFF;
          reg_led_select <= 1'b0;
+         reg_external_arm <= 1'b0;
          O_clear_errors <= 1'b0;
          `ifdef REV3
              reg_board_rev <= 3;
@@ -361,7 +373,6 @@ module reg_main #(
       end
 
       else begin
-         reg_arm_r <= reg_arm;
          capture_now_r <= capture_now;
          if (selected && reg_write) begin
             case (address)
@@ -382,6 +393,7 @@ module reg_main #(
                `REG_MAX_TIMESTAMP: reg_max_timestamp[reg_bytecnt[0]*8 +: 8] <= write_data;
                `REG_LED_SELECT: reg_led_select <= write_data[0];
                `REG_CAPTURE_OFF: reg_capture_off <= write_data[0];
+               `REG_EXTERNAL_ARM: reg_external_arm <= write_data[0];
             endcase
          end
 
