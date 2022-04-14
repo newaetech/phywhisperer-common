@@ -110,7 +110,6 @@ module reg_main #(
 
 // Interface to top-level:
    input  wire [31:0]  buildtime,
-   output reg  [`FE_SELECT_WIDTH-1:0] fe_select,
    output wire selected
 
 );
@@ -204,7 +203,6 @@ module reg_main #(
          case (address)
             `REG_BUILDTIME: reg_read_data = buildtime[reg_bytecnt[1:0]*8 +: 8];
             `REG_SNIFF_FIFO_STAT: reg_read_data = {2'b00, I_fifo_status};
-            `REG_FE_SELECT: reg_read_data = fe_select;
             `REG_ARM: reg_read_data = reg_arm;
             `REG_CAPTURE_OFF: reg_read_data = reg_capture_off;
             `REG_TRIGGER_ENABLE: reg_read_data = reg_trigger_enable;
@@ -341,7 +339,6 @@ module reg_main #(
    // write logic (USB clock domain):
    always @(posedge cwusb_clk) begin
       if (fpga_reset) begin
-         fe_select <= `FE_USB;
          reg_arm <= 1'b0;
          reg_capture_off <= 1'b0;
          reg_trigger_enable <= 0;
@@ -376,7 +373,6 @@ module reg_main #(
          capture_now_r <= capture_now;
          if (selected && reg_write) begin
             case (address)
-               `REG_FE_SELECT: fe_select <= write_data[`FE_SELECT_WIDTH-1:0];
                `REG_TRIGGER_ENABLE: reg_trigger_enable <= write_data;
                `REG_TRIGGER_DELAY: reg_trigger_delay[reg_bytecnt*8 +: 8] <= write_data; // warning: repeated access may not work as expected
                `REG_TRIGGER_WIDTH: reg_trigger_width[reg_bytecnt*8 +: 8] <= write_data; // warning: repeated access may not work as expected
