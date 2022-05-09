@@ -282,9 +282,13 @@ module reg_main #(
          reg_bytecnt_r20 <= reg_bytecnt[1:0];
          if (O_fifo_read)
             fifo_data_r <= I_fifo_data;
-         if (selected && reg_read && ~reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && fifo_empty_r)
+         if (~selected)
+            empty_fifo_read <= 1'b0;
+         else if (selected && reg_read && ~reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && fifo_empty_r)
             empty_fifo_read <= 1'b1;
-         else if (selected && reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && reg_bytecnt_r20 == 2'b11 && ~fifo_empty_r)
+         // NOTE: the condition for clearing empty_fifo_read appears fragile and depends on some assumptions of the timing of reg_read
+         // This should be better than what we had before:
+         else if (selected && reg_read_r && ~reg_read && (address == `REG_SNIFF_FIFO_RD) && reg_bytecnt_r20 == 2'b11 && ~fifo_empty_r)
             empty_fifo_read <= 1'b0;
 
       end
@@ -444,7 +448,7 @@ module reg_main #(
 
    `ifdef ILA_REG_MAIN
 
-       ila_2 U_reg_ila (
+       ila_reg_main U_ila_reg_main (
 	.clk            (cwusb_clk),                    // input wire clk
 	.probe0         (reg_address),                  // input wire [7:0]  probe0  
 	.probe1         (reg_bytecnt),                  // input wire [6:0]  probe1 
@@ -455,7 +459,14 @@ module reg_main #(
 	.probe6         (reg_addrvalid),                // input wire [0:0]  probe6 
 	.probe7         (reg_read_data),                // input wire [7:0]  probe7 
 	.probe8         (selected),                     // input wire [0:0]  probe8 
-	.probe9         (read_data_fifo[7:0])           // input wire [7:0]  probe9
+	.probe9         (read_data_fifo[7:0]),          // input wire [7:0]  probe9
+	.probe10        (O_fifo_read),                  // input wire [0:0]  probe10
+	.probe11        (fast_fifo_rd),                 // input wire [0:0]  probe11 
+	.probe12        (reg_fifo_rd),                  // input wire [0:0]  probe12 
+	.probe13        (empty_fifo_read),              // input wire [0:0]  probe13 
+	.probe14        (fifo_empty_r),                 // input wire [0:0]  probe14 
+	.probe15        (reg_bytecnt_r20),              // input wire [1:0]  probe15 
+	.probe16        (reg_read_r)                    // input wire [0:0]  probe16 
        );
 
 
