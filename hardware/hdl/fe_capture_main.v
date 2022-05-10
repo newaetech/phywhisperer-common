@@ -44,9 +44,8 @@ module fe_capture_main #(
 
     /* REGISTER CONNECTIONS */
     input  wire I_timestamps_disable,
-    input  wire I_arm,
-    input  wire I_reg_arm, // TODO: yes this is confusing but there are two different arms..
-                           // maybe there's a better way?
+    input  wire I_arm_fe,
+    input  wire I_capture_off,
     input  wire [pCAPTURE_LEN_WIDTH-1:0] I_capture_len,
     input  wire I_count_writes,
     input  wire I_counter_quick_start,
@@ -89,10 +88,8 @@ module fe_capture_main #(
 
     (* ASYNC_REG = "TRUE" *) reg [pCAPTURE_LEN_WIDTH-1:0] capture_len_r;
     (* ASYNC_REG = "TRUE" *) reg timestamps_disable_r;
-    (* ASYNC_REG = "TRUE" *) reg [1:0] arm_pipe;
     (* ASYNC_REG = "TRUE" *) reg [1:0] capturing_pipe;
     reg  arm_r;
-    reg  arm_r2;
     reg  capturing;
 
     wire [15:0] max_timestamp = trace_clock_sel? {I_max_timestamp[15:1], 1'b0} : I_max_timestamp;
@@ -137,7 +134,9 @@ module fe_capture_main #(
              // than we should. Could be fixed but it's not a problem since the FIFO gets flushed
              // upon re-arming. And the Xilinx FIFO is actually deeper than the requested 8192 anyway.
              // And we don't allow overflow writes anyway.
-             if (event_reg && short_timestamp && I_capture_enable && capture_allowed)
+             if (I_capture_off)
+                next_state = pS_IDLE;
+             else if (event_reg && short_timestamp && I_capture_enable && capture_allowed)
                 next_state = pS_DATA;
              else if (I_event && !short_timestamp_pre && I_capture_enable && capture_allowed)
                 // do FE_FIFO_CMD_TIME packet one cycle early so we don't get caught behind, 
@@ -259,7 +258,7 @@ module fe_capture_main #(
           capture_count <= 32'd0;
        end
        else begin
-          if (arm_r & !arm_r2)
+          if (I_arm_fe & !arm_r)
              capture_count <= 32'd0;
           else if (I_count_writes? O_fifo_wr : I_capture_enable)
              capture_count <= capture_count + 1;
@@ -283,7 +282,7 @@ module fe_capture_main #(
       end
    end
 
-   assign O_capture_done = ~(I_reg_arm || capturing);
+   assign O_capture_done = ~(I_arm_fe || capturing);
 
     // strictly for easier visualization/debug:
     wire state_idle = (state == pS_IDLE);
@@ -295,19 +294,16 @@ module fe_capture_main #(
       if (reset_i) begin
          capture_len_r <= 0;
          timestamps_disable_r <= 0;
-         arm_pipe <= 0;
          arm_r <= 0;
-         arm_r2 <= 0;
          event_reg <= 0;
       end
       else begin
          capture_len_r <= I_capture_len;
          timestamps_disable_r <= I_timestamps_disable;
          event_reg <= I_event;
-         {arm_r2, arm_r, arm_pipe} <= {arm_r, arm_pipe, I_arm};
+         arm_r <= I_arm_fe;
       end
    end
-
 
    always @(posedge cwusb_clk) begin
       if (reset_i) begin
@@ -316,7 +312,7 @@ module fe_capture_main #(
       else begin
          if (I_fifo_empty)
             O_fifo_flush <= 1'b0;
-         else if (I_reg_arm & ~O_fifo_flush)
+         else if (I_arm_fe & ~O_fifo_flush)
             O_fifo_flush <= 1'b1;
       end
    end

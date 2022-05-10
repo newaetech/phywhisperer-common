@@ -25,6 +25,7 @@
 
 module reg_main #(
    parameter pBYTECNT_SIZE = 7,
+   parameter pBUFFER_SIZE = 64,
    parameter pNUM_TRIGGER_PULSES = 8,
    parameter pNUM_TRIGGER_WIDTH = 4,
    parameter pALL_TRIGGER_DELAY_WIDTHS = 24*pNUM_TRIGGER_PULSES,
@@ -69,9 +70,10 @@ module reg_main #(
 
 // Interface to front-end capture:
    input  wire         fe_clk,
-   output wire         O_arm,
-   output wire         O_reg_arm,
-   output wire         O_arm_pulse,
+   input  wire         I_external_arm,
+   output wire         O_arm_usb,
+   output wire         O_arm_fe,
+   output wire         O_capture_off,
    input  wire         I_flushing,
    output wire [pCAPTURE_LEN_WIDTH-1:0] O_capture_len,
    output wire         O_count_writes,
@@ -93,6 +95,7 @@ module reg_main #(
    output wire [pALL_TRIGGER_DELAY_WIDTHS-1:0]  O_trigger_delay,
    output wire [pALL_TRIGGER_WIDTH_WIDTHS-1:0]  O_trigger_width,
    output wire [pNUM_TRIGGER_WIDTH-1:0]         O_num_triggers,
+   input  wire [pNUM_TRIGGER_WIDTH-1:0]         I_triggers_generated,
    output wire                                  O_trigger_enable,
 
 
@@ -107,7 +110,6 @@ module reg_main #(
 
 // Interface to top-level:
    input  wire [31:0]  buildtime,
-   output reg  [`FE_SELECT_WIDTH-1:0] fe_select,
    output wire selected
 
 );
@@ -119,7 +121,7 @@ module reg_main #(
    reg  [17:0] read_data_fifo;
    reg  [17:0] fifo_data_r;
    reg  reg_arm;
-   reg  reg_arm_r;
+   reg  reg_capture_off;
    reg  capture_now;
    reg  capture_now_r;
    wire capture_enable_pulse;
@@ -135,6 +137,7 @@ module reg_main #(
    reg reg_capture_while_trig;
    reg [15:0] reg_max_timestamp;
    reg reg_led_select;
+   reg reg_external_arm;
 
    reg reg_trigger_enable;
    reg [pNUM_TRIGGER_WIDTH-1:0] reg_num_triggers;
@@ -168,9 +171,21 @@ module reg_main #(
    assign selected = reg_addrvalid & reg_address[7:6] == pSELECT;
    wire [5:0] address = reg_address[5:0];
 
-   assign O_arm = reg_arm_r & ~I_flushing;
-   assign O_arm_pulse = reg_arm & ~reg_arm_r;
-   assign O_reg_arm = reg_arm;
+   assign O_arm_usb = reg_external_arm? I_external_arm : reg_arm;
+   assign O_arm_fe = reg_arm_feclk;
+   (* ASYNC_REG = "TRUE" *) reg  [1:0] reg_arm_pipe;
+   reg reg_arm_feclk;
+   always @(posedge fe_clk) begin
+      if (fpga_reset) begin
+         reg_arm_feclk <= 0;
+         reg_arm_pipe <= 0;
+      end
+      else begin
+         {reg_arm_feclk, reg_arm_pipe} <= {reg_arm_pipe, O_arm_usb};
+      end
+   end
+
+   assign O_capture_off = reg_capture_off;
    assign O_userio_pwdriven = reg_userio_pwdriven;
    assign O_userio_drive_data = reg_userio_drive_data;
    assign O_capture_now = capture_now & ~capture_now_r;
@@ -179,18 +194,22 @@ module reg_main #(
 
    assign fpga_reset = reset_pin || reg_reset;
 
+   wire [10:0] buffer_size_bits = pBUFFER_SIZE;
+   wire [7:0] buffer_size_bytes = buffer_size_bits[10:3];
+
    // read logic:
    always @(*) begin
       if (selected && reg_read) begin
          case (address)
             `REG_BUILDTIME: reg_read_data = buildtime[reg_bytecnt[1:0]*8 +: 8];
             `REG_SNIFF_FIFO_STAT: reg_read_data = {2'b00, I_fifo_status};
-            `REG_FE_SELECT: reg_read_data = fe_select;
             `REG_ARM: reg_read_data = reg_arm;
+            `REG_CAPTURE_OFF: reg_read_data = reg_capture_off;
             `REG_TRIGGER_ENABLE: reg_read_data = reg_trigger_enable;
             `REG_TRIGGER_DELAY: reg_read_data = reg_trigger_delay[reg_bytecnt*8 +: 8]; // warning: repeated access may not work as expected
             `REG_TRIGGER_WIDTH: reg_read_data = reg_trigger_width[reg_bytecnt*8 +: 8]; // warning: repeated access may not work as expected
-            `REG_NUM_TRIGGERS: reg_read_data = {4'b0, reg_num_triggers};
+            `REG_NUM_TRIGGERS: reg_read_data = reg_num_triggers[reg_bytecnt*8 +: 8];
+            `REG_TRIGGERS_GENERATED: reg_read_data = I_triggers_generated[reg_bytecnt*8 +: 8];
             `REG_TRIG_CLK_PHASE_SHIFT: reg_read_data = {7'b0, phaseshift_active};
             `REG_CAPTURE_LEN: reg_read_data = reg_capture_len[reg_bytecnt*8 +: 8]; // warning: repeated access may not work as expected
             `REG_COUNT_WRITES: reg_read_data = reg_count_writes;
@@ -204,6 +223,8 @@ module reg_main #(
             `REG_CAPTURE_WHILE_TRIG: reg_read_data = reg_capture_while_trig;
             `REG_MAX_TIMESTAMP: reg_read_data = reg_max_timestamp[reg_bytecnt[0]*8 +: 8];
             `REG_LED_SELECT: reg_read_data = reg_led_select;
+            `REG_BUFFER_SIZE: reg_read_data = buffer_size_bytes;
+            `REG_EXTERNAL_ARM: reg_read_data = reg_external_arm;
             default: reg_read_data = 0;
          endcase
       end
@@ -261,9 +282,13 @@ module reg_main #(
          reg_bytecnt_r20 <= reg_bytecnt[1:0];
          if (O_fifo_read)
             fifo_data_r <= I_fifo_data;
-         if (selected && reg_read && ~reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && fifo_empty_r)
+         if (~selected)
+            empty_fifo_read <= 1'b0;
+         else if (selected && reg_read && ~reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && fifo_empty_r)
             empty_fifo_read <= 1'b1;
-         else if (selected && reg_read_r && (address == `REG_SNIFF_FIFO_RD) && ((reg_bytecnt % 4) == 0) && reg_bytecnt_r20 == 2'b11 && ~fifo_empty_r)
+         // NOTE: the condition for clearing empty_fifo_read appears fragile and depends on some assumptions of the timing of reg_read
+         // This should be better than what we had before:
+         else if (selected && reg_read_r && ~reg_read && (address == `REG_SNIFF_FIFO_RD) && reg_bytecnt_r20 == 2'b11 && ~fifo_empty_r)
             empty_fifo_read <= 1'b0;
 
       end
@@ -318,9 +343,8 @@ module reg_main #(
    // write logic (USB clock domain):
    always @(posedge cwusb_clk) begin
       if (fpga_reset) begin
-         fe_select <= `FE_USB;
          reg_arm <= 1'b0;
-         reg_arm_r <= 1'b0;
+         reg_capture_off <= 1'b0;
          reg_trigger_enable <= 0;
          reg_trigger_delay <= 0;
          reg_trigger_width <= 0;
@@ -340,6 +364,7 @@ module reg_main #(
          reg_capture_while_trig <= 1'b0;
          reg_max_timestamp <= 16'hFFFF;
          reg_led_select <= 1'b0;
+         reg_external_arm <= 1'b0;
          O_clear_errors <= 1'b0;
          `ifdef REV3
              reg_board_rev <= 3;
@@ -349,15 +374,13 @@ module reg_main #(
       end
 
       else begin
-         reg_arm_r <= reg_arm;
          capture_now_r <= capture_now;
          if (selected && reg_write) begin
             case (address)
-               `REG_FE_SELECT: fe_select <= write_data[`FE_SELECT_WIDTH-1:0];
                `REG_TRIGGER_ENABLE: reg_trigger_enable <= write_data;
                `REG_TRIGGER_DELAY: reg_trigger_delay[reg_bytecnt*8 +: 8] <= write_data; // warning: repeated access may not work as expected
                `REG_TRIGGER_WIDTH: reg_trigger_width[reg_bytecnt*8 +: 8] <= write_data; // warning: repeated access may not work as expected
-               `REG_NUM_TRIGGERS: reg_num_triggers <= write_data[pNUM_TRIGGER_WIDTH-1:0];
+               `REG_NUM_TRIGGERS: reg_num_triggers[reg_bytecnt*8 +: 8] <= write_data;
                `REG_CAPTURE_LEN: reg_capture_len[reg_bytecnt*8 +: 8] <= write_data; // warning: repeated access may not work as expected
                `REG_COUNT_WRITES: reg_count_writes <= write_data;
                `REG_COUNTER_QUICK_START: reg_counter_quick_start <= write_data;
@@ -369,6 +392,8 @@ module reg_main #(
                `REG_CAPTURE_WHILE_TRIG: reg_capture_while_trig <= write_data[0];
                `REG_MAX_TIMESTAMP: reg_max_timestamp[reg_bytecnt[0]*8 +: 8] <= write_data;
                `REG_LED_SELECT: reg_led_select <= write_data[0];
+               `REG_CAPTURE_OFF: reg_capture_off <= write_data[0];
+               `REG_EXTERNAL_ARM: reg_external_arm <= write_data[0];
             endcase
          end
 
@@ -423,7 +448,7 @@ module reg_main #(
 
    `ifdef ILA_REG_MAIN
 
-       ila_2 U_reg_ila (
+       ila_reg_main U_ila_reg_main (
 	.clk            (cwusb_clk),                    // input wire clk
 	.probe0         (reg_address),                  // input wire [7:0]  probe0  
 	.probe1         (reg_bytecnt),                  // input wire [6:0]  probe1 
@@ -434,7 +459,14 @@ module reg_main #(
 	.probe6         (reg_addrvalid),                // input wire [0:0]  probe6 
 	.probe7         (reg_read_data),                // input wire [7:0]  probe7 
 	.probe8         (selected),                     // input wire [0:0]  probe8 
-	.probe9         (read_data_fifo[7:0])           // input wire [7:0]  probe9
+	.probe9         (read_data_fifo[7:0]),          // input wire [7:0]  probe9
+	.probe10        (O_fifo_read),                  // input wire [0:0]  probe10
+	.probe11        (fast_fifo_rd),                 // input wire [0:0]  probe11 
+	.probe12        (reg_fifo_rd),                  // input wire [0:0]  probe12 
+	.probe13        (empty_fifo_read),              // input wire [0:0]  probe13 
+	.probe14        (fifo_empty_r),                 // input wire [0:0]  probe14 
+	.probe15        (reg_bytecnt_r20),              // input wire [1:0]  probe15 
+	.probe16        (reg_read_r)                    // input wire [0:0]  probe16 
        );
 
 
