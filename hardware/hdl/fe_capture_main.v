@@ -32,6 +32,7 @@ module fe_capture_main #(
 
     /* FRONT END CONNECTIONS */
     input  wire fe_clk,
+    input  wire fifo_rd_clk,
     input  wire trace_clock_sel,
 
     /* SPECIFIC FRONTEND CONNECTIONS */
@@ -46,6 +47,7 @@ module fe_capture_main #(
     input  wire I_timestamps_disable,
     input  wire I_arm_fe,
     input  wire I_capture_off,
+    input  wire I_test_mode,
     input  wire [pCAPTURE_LEN_WIDTH-1:0] I_capture_len,
     input  wire I_count_writes,
     input  wire I_counter_quick_start,
@@ -134,7 +136,7 @@ module fe_capture_main #(
              // than we should. Could be fixed but it's not a problem since the FIFO gets flushed
              // upon re-arming. And the Xilinx FIFO is actually deeper than the requested 8192 anyway.
              // And we don't allow overflow writes anyway.
-             if (I_capture_off)
+             if (I_capture_off || I_test_mode)
                 next_state = pS_IDLE;
              else if (event_reg && short_timestamp && I_capture_enable && capture_allowed)
                 next_state = pS_DATA;
@@ -217,7 +219,9 @@ module fe_capture_main #(
           O_fifo_wr <= 1'b0;
        end
        else begin
-          if (state == pS_DATA) begin
+          if (I_test_mode)
+             O_fifo_wr <= capture_allowed;
+          else if (state == pS_DATA) begin
              O_fifo_command <= I_data_cmd;
              O_fifo_wr <= 1'b1;
           end
@@ -305,17 +309,27 @@ module fe_capture_main #(
       end
    end
 
-   always @(posedge cwusb_clk) begin
+   wire arm_fifo_rd_pulse;
+   always @(posedge fifo_rd_clk) begin
       if (reset_i) begin
          O_fifo_flush <= 1'b0;
       end
       else begin
          if (I_fifo_empty)
             O_fifo_flush <= 1'b0;
-         else if (I_arm_fe & ~O_fifo_flush)
+         else if (arm_fifo_rd_pulse & ~I_fifo_empty)
             O_fifo_flush <= 1'b1;
       end
    end
+
+   cdc_pulse U_cdc_arm_pulse (
+      .reset_i       (reset_i),
+      .src_clk       (fe_clk),
+      .src_pulse     (I_arm_fe && ~arm_r),
+      .dst_clk       (fifo_rd_clk),
+      .dst_pulse     (arm_fifo_rd_pulse)
+   );
+
 
    `ifdef ILA_FE_CAPTURE_MAIN
       ila_fe_capture_main I_ila_fe_capture_main (
