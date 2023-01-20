@@ -173,17 +173,15 @@ module reg_main #(
 
    assign O_arm_usb = reg_external_arm? I_external_arm : reg_arm;
    assign O_arm_fe = reg_arm_feclk;
-   (* ASYNC_REG = "TRUE" *) reg  [1:0] reg_arm_pipe;
-   reg reg_arm_feclk;
-   always @(posedge fe_clk) begin
-      if (fpga_reset) begin
-         reg_arm_feclk <= 0;
-         reg_arm_pipe <= 0;
-      end
-      else begin
-         {reg_arm_feclk, reg_arm_pipe} <= {reg_arm_pipe, O_arm_usb};
-      end
-   end
+
+   wire reg_arm_feclk;
+   cdc_simple U_arm_cdc (
+       .reset          (fpga_reset),
+       .clk            (fe_clk),
+       .data_in        (O_arm_usb),
+       .data_out       (reg_arm_feclk),
+       .data_out_r     ()
+   );
 
    assign O_capture_off = reg_capture_off;
    assign O_userio_pwdriven = reg_userio_pwdriven;

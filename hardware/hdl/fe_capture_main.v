@@ -90,9 +90,8 @@ module fe_capture_main #(
 
     (* ASYNC_REG = "TRUE" *) reg [pCAPTURE_LEN_WIDTH-1:0] capture_len_r;
     (* ASYNC_REG = "TRUE" *) reg timestamps_disable_r;
-    (* ASYNC_REG = "TRUE" *) reg [1:0] capturing_pipe;
     reg  arm_r;
-    reg  capturing;
+    wire  capturing;
 
     wire [15:0] max_timestamp = trace_clock_sel? {I_max_timestamp[15:1], 1'b0} : I_max_timestamp;
 
@@ -274,17 +273,14 @@ module fe_capture_main #(
     assign capture_allowed = I_capture_enable & !I_fifo_full & !I_fifo_overflow_blocked &
                             (I_capture_while_trig? I_target_trig : ((capture_count < capture_len_r) || (capture_len_r == 0)));
 
-
    // CDC:
-   always @(posedge cwusb_clk) begin
-      if (reset_i) begin
-         capturing <= 0;
-         capturing_pipe <= 0;
-      end
-      else begin
-         {capturing, capturing_pipe} <= {capturing_pipe, capture_allowed};
-      end
-   end
+   cdc_simple U_cdc_simple (
+       .reset          (reset_i),
+       .clk            (cwusb_clk),
+       .data_in        (capture_allowed),
+       .data_out       (capturing),
+       .data_out_r     ()
+   );
 
    assign O_capture_done = ~(I_arm_fe || capturing);
 

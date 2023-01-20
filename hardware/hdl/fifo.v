@@ -52,11 +52,8 @@ module fifo (
 
 );
 
-
-   reg fifo_full_usbclk;
-   reg fifo_overflow_blocked_usbclk;
-   (* ASYNC_REG = "TRUE" *) reg [1:0] fifo_full_pipe;
-   (* ASYNC_REG = "TRUE" *) reg [1:0] fifo_overflow_blocked_pipe;
+   wire fifo_full_usbclk;
+   wire fifo_overflow_blocked_usbclk;
 
    reg  fifo_underflow_sticky;
 
@@ -72,22 +69,24 @@ module fifo (
    wire clear_errors_fe;
 
    assign O_fifo_empty = fifo_empty;
-
    assign O_error_flag = fifo_underflow_sticky | fifo_overflow_blocked_usbclk;
 
    // CDC:
-   always @(posedge cwusb_clk) begin
-      if (reset_i) begin
-         fifo_full_usbclk <= 0;
-         fifo_overflow_blocked_usbclk <= 0;
-         fifo_full_pipe <= 0;
-         fifo_overflow_blocked_pipe <= 0;
-      end
-      else begin
-         {fifo_full_usbclk, fifo_full_pipe} <= {fifo_full_pipe, fifo_full};
-         {fifo_overflow_blocked_usbclk, fifo_overflow_blocked_pipe} <= {fifo_overflow_blocked_pipe, fifo_overflow_blocked};
-      end
-   end
+   cdc_simple U_fifo_full_cdc (
+       .reset          (reset_i),
+       .clk            (cwusb_clk),
+       .data_in        (fifo_full),
+       .data_out       (fifo_full_usbclk),
+       .data_out_r     ()
+   );
+   cdc_simple U_fifo_overflow_blocked_cdc (
+       .reset          (reset_i),
+       .clk            (cwusb_clk),
+       .data_in        (fifo_overflow_blocked),
+       .data_out       (fifo_overflow_blocked_usbclk),
+       .data_out_r     ()
+   );
+
 
    cdc_pulse U_reset_sync_cdc (
       .reset_i       (reset_i),
