@@ -189,14 +189,12 @@ module fifo (
            `ifdef TINYFIFO
               fifo_generator_tiny U_fifo (
                 .rst            (reset_i),
-
                 // Write port:
                 .wr_clk         (fe_clk),
                 .wr_en          (I_wr),
                 .din            (I_data),
                 .full           (fifo_full),
                 .prog_full      (fifo_full_threshold_xilinx),
-
                 // Read port:
                 .rd_clk         (cwusb_clk),
                 .rd_en          (fifo_rd_en),
@@ -205,17 +203,34 @@ module fifo (
                 .empty          (fifo_empty),
                 .prog_empty     (fifo_empty_threshold_xilinx)
               );
-           `else
-              fifo_generator_0 U_fifo (
-                .rst            (reset_i),
 
+           `elsif SEMIPRO
+              fifo_generator_semipro U_fifo (
+                .rst            (reset_i),
                 // Write port:
                 .wr_clk         (fe_clk),
                 .wr_en          (I_wr),
                 .din            (I_data),
                 .full           (fifo_full),
                 .prog_full      (fifo_full_threshold_xilinx),
+                // Read port:
+                .rd_clk         (cwusb_clk),
+                .rd_en          (fifo_rd_en),
+                .dout           (O_data),
+                .underflow      (fifo_underflow),
+                .empty          (fifo_empty),
+                .prog_empty     (fifo_empty_threshold_xilinx)
+              );
 
+           `else
+              fifo_generator_0 U_fifo (
+                .rst            (reset_i),
+                // Write port:
+                .wr_clk         (fe_clk),
+                .wr_en          (I_wr),
+                .din            (I_data),
+                .full           (fifo_full),
+                .prog_full      (fifo_full_threshold_xilinx),
                 // Read port:
                 .rd_clk         (cwusb_clk),
                 .rd_en          (fifo_rd_en),
