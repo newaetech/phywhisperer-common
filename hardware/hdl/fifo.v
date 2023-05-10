@@ -204,7 +204,7 @@ module fifo (
                 .prog_empty     (fifo_empty_threshold_xilinx)
               );
 
-           `elsif SEMIPRO
+           `elsif PLUS
               fifo_generator_semipro U_fifo (
                 .rst            (reset_i),
                 // Write port:
