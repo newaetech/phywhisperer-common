@@ -42,7 +42,6 @@ module pw_trigger #(
    input  wire [pALL_TRIGGER_WIDTH_WIDTHS-1:0] I_trigger_width,
    input  wire [pNUM_TRIGGER_WIDTH-1:0]   I_num_triggers,
    input  wire         I_trigger_enable,
-   output wire         O_capture_enable_pulse,
 
    // from pattern match block:
    input  wire         I_match,
@@ -67,8 +66,6 @@ module pw_trigger #(
    wire match;
    wire capture_enable_start;
    reg  capture_enable_reg;
-   reg  capture_enable_reg2;
-   reg  capture_enable_pulse;
 
 
    // CDC for register block inputs: since these signals are quasi-static
@@ -238,18 +235,10 @@ module pw_trigger #(
          delay_counter_fe_running <= 1'b0;
          capturing_r <= 1'b0;
          capture_enable_reg <= 1'b0;
-         capture_enable_reg2 <= 1'b0;
-         capture_enable_pulse <= 1'b0;
       end
 
       else begin
          capturing_r <= I_capturing;
-         capture_enable_reg2 <= capture_enable_reg;
-
-         if (capture_enable_reg & !capture_enable_reg2)
-            capture_enable_pulse <= 1'b1;
-         else
-            capture_enable_pulse <= 1'b0;
 
          if (O_capture_enable) 
             delay_counter_fe_running <= 1'b0;
@@ -273,7 +262,6 @@ module pw_trigger #(
    assign match = (I_match && ~I_capture_off) | delay_counter_fe_running;
    assign capture_enable_start = match & (delay_counter_fe == I_capture_delay);
    assign O_capture_enable = capture_enable_start | capture_enable_reg;
-   assign O_capture_enable_pulse = capture_enable_pulse;
 
    `ifdef ILA_TRIG_FE
       ila_trig_fe I_ila_trigger_fe (
