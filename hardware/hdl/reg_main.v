@@ -401,6 +401,8 @@ module reg_main #(
          if (selected && reg_write && (address == `REG_ARM)) begin
             if (write_data[0])
                reg_arm <= 1'b1;
+            else
+               reg_arm <= 1'b0;
             if (write_data[1])
                capture_now <= 1'b1;
          end
